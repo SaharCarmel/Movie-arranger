@@ -1,3 +1,5 @@
+#!/Library/Frameworks/Python.framework/Versions/3.5/bin/python3.5
+
 import os
 import re
 import requests
@@ -6,22 +8,25 @@ import urllib.parse
 from bs4 import BeautifulSoup
 import urllib.request
 import io
+from subliminal import *
+from babelfish import *
+from progressbar import ProgressBar
 
 
 class MovieDidNotFound(Exception):
     pass
 
 
-class movie():
-    """ Movie class extracts and provides all the information about the movie from the web. for now the class can only get
-        folders in the format of dots connecting the full name. For example The.legend.of.tarzan.2016.1080p.xSpark
+class Movie:
+    """ Movie class extracts and provides all the information about the movie from the web. for now the class can only
+        get folders in the format of dots connecting the full name. For example The.legend.of.tarzan.2016.1080p.xSpark
 
-        After running the script once the name of the folders will be changed so that the format of the folder names wont
-        fit. For that the script creates a text file containing the original folder name and use it if the check attribute
-        is 1
+        After running the script once the name of the folders will be changed so that the format of the folder names
+        wont fit. For that the script creates a text file containing the original folder name and use it if the check
+        attribute is 1
 
     Attributes:
-        movie_title: str provided in order to identify the movie, should be in the format dots. eg: The.legend.of.tarzan.2016.1080p.xsparks.
+        movie_title: str provided in order to identify the movie, should be in the format dots.
         movie_name: str containing the movie name after the extraction of data from web.
         definition: str of the definition of the movie.
         year: int with the movie year.
@@ -34,6 +39,7 @@ class movie():
 
     """
 
+    # TODO adding a format variable to indicate if the name is in the dots format or otherwise.
     def __init__(self, movie_title, folder_name=''):
         self.movie_title = movie_title
         if folder_name != '':
@@ -56,7 +62,7 @@ class movie():
         self.soup = BeautifulSoup(page, "html.parser")
         self.get_rating()
         self.new_name = (
-        self.movie_name.capitalize() + ', Movie year - ' + str(self.year) + ' Rating - ' + self.imdb_score)
+            '{0}, Movie year - {1} Rating - {2}'.format(self.movie_name.capitalize(), str(self.year), self.imdb_score))
         self.create_data_file()
 
     def get_movie_name(self):
@@ -83,7 +89,7 @@ class movie():
                 number += 1
 
     def get_rating(self):
-        "Assign the imdb rating of the movie to the imdb_score variable"
+        """Assign the imdb rating of the movie to the imdb_score variable"""
         self.imdb_score = self.soup.find("span", itemprop="ratingValue").contents[0]
 
     def create_data_file(self):
@@ -168,40 +174,50 @@ def imdb_id_from_title2(title: str) -> str:
     page = urllib.request.urlopen(url)
     local_soup = BeautifulSoup(page, "html.parser")
     table = local_soup.find_all('tr', class_='findResult odd')[0].a['href']
-    id = re.split('./', table)[1]
-    return id
+    imdb_id = re.split('./', table)[1]
+    return imdb_id
 
 
 def arrange_this_folder(path=os.getcwd()):
     """Given a folder path with the folders names in the format that the movie class can input, arrange the names of
     the folder in the format of (Movie_name, Year: Movie_year, Rating: imdb_rating)"""
+    # TODO change the subtitle file name so it will be played automaticly
     not_found_list = []
     folder_list = os.listdir(path)
     base_folder = path
     folder_list = remove_hidden(folder_list)
-    for folder in folder_list:
+    pbar = ProgressBar()
+    for folder in pbar(folder_list):
         try:
-            info_text = open(os.path.join(os.getcwd(), folder, "Info.txt"))
+            info_text = get_info_file(os.path.join(os.getcwd(), folder))
             dict1 = text_to_dict(info_text)
             if dict1['Check'] != ' 1 ':
-                x = movie(folder)
+                x = Movie(folder)
                 os.rename(os.path.join(base_folder, folder), x.new_name)
+                download_sub(x.movie_title, os.path.join(os.getcwd(), x.new_name))
             if dict1['Check'] == ' 1 ':
-                x = movie(dict1['movie_title'], folder)
-                os.rename(os.path.join(base_folder, folder), x.new_name)
+                answer = input("The movie: " + dict1['movie_name'] + 'has already been checked. Do you want to organize'
+                                                                     ' it again? Y/N')
+                if answer == 'Y':
+                    x = Movie(dict1['movie_title'], folder)
+                    os.rename(os.path.join(base_folder, folder), x.new_name)
+                    download_sub(x.movie_title, os.path.join(os.getcwd(), x.new_name))
+                    os.chdir(base_folder)
         except NotADirectoryError:
             pass
         except FileNotFoundError:
             try:
-                x = movie(folder)
+                x = Movie(folder)
                 os.rename(os.path.join(base_folder, folder), x.new_name)
             except MovieDidNotFound:
+                # TODO adding an option to insert manually the movie name
                 not_found_list.append(folder)
                 pass
             pass
-    print("These movies are not in the imdb database or maybe they are not movie folders:")
-    for movies in not_found_list:
-        print(movies + '\n')
+    if not_found_list != []:
+        print("These movies are not in the imdb database or maybe they are not movie folders:")
+        for movies in not_found_list:
+            print(movies + '\n')
 
 
 def remove_hidden(folder_list: list) -> list:
@@ -215,13 +231,26 @@ def remove_hidden(folder_list: list) -> list:
     return folder_list
 
 
-def get_info_file(path=os.getcwd()):
+def get_info_file(path: str = os.getcwd()) -> io.TextIOWrapper:
     """Returns the info.txt file inside the path given
 
         Arguments:
             path: str of the folder (default is the current directory)
 
         Returns:
-            file: text file 
+            file: text file
+
+
     """
     return open(os.path.join(path, "Info.txt"))
+
+
+def download_sub(movie_name, path):
+    mov_object = Video.fromname(movie_name)
+    subs = download_best_subtitles([mov_object], {Language('heb')})
+    subs = subs[mov_object][0]
+    save_subtitles(mov_object, [subs], directory=path)
+
+
+def change_to_original(path):
+    """Changes the folders to original form in order to test the script"""
